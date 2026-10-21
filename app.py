@@ -2,23 +2,32 @@ import streamlit as st
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from rdkit.Chem import Draw
 import xgboost as xgb
 import os
 import base64
 from io import BytesIO
 
+# Safe import for Draw to prevent app crash on Linux servers
+try:
+    from rdkit.Chem import Draw
+    DRAW_AVAILABLE = True
+except ImportError:
+    DRAW_AVAILABLE = False
+
 # Function to convert RDKit molecule to an HTML image string
 def mol_to_html_img(mol):
-    if mol is None:
-        return ""
-    # Generate 2D coordinates for the structure drawing
-    AllChem.Compute2DCoords(mol)
-    img = Draw.MolToImage(mol, size=(150, 150))
-    buffered = BytesIO()
-    img.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    return f'<img src="data:image/png;base64,{img_str}" width="150" />'
+    if mol is None or not DRAW_AVAILABLE:
+        return "[Image Unavaliable]"
+    try:
+        # Generate 2D coordinates for the structure drawing
+        AllChem.Compute2DCoords(mol)
+        img = Draw.MolToImage(mol, size=(150, 150))
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        return f'<img src="data:image/png;base64,{img_str}" width="150" />'
+    except Exception:
+        return "[Draw Error]"
 
 # App Configuration
 st.set_page_config(page_title="QSAR Prediction App", page_icon="🧪", layout="wide")
@@ -51,7 +60,7 @@ if uploaded_file is not None:
             for index, row in df.iterrows():
                 # Dynamically find a column named 'smiles' or fallback to the first column
                 smiles_col = [col for col in df.columns if 'smile' in col.lower()]
-                smiles = row[smiles_col[0]] if smiles_col else row.iloc[0]
+                smiles = row[smiles_col] if smiles_col else row.iloc[0]
                 
                 mol = Chem.MolFromSmiles(str(smiles))
                 if mol:
