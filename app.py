@@ -33,7 +33,10 @@ if uploaded_file is not None:
             
             # Generate Morgan Fingerprints for each molecule
             for index, row in df.iterrows():
-                smiles = row.iloc[0] # Assuming the first column contains SMILES strings
+                # Dynamically find a column named 'smiles' or fallback to the first column
+                smiles_col = [col for col in df.columns if 'smile' in col.lower()]
+                smiles = row[smiles_col[0]] if smiles_col else row.iloc[0]
+                
                 mol = Chem.MolFromSmiles(str(smiles))
                 if mol:
                     fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
@@ -41,7 +44,7 @@ if uploaded_file is not None:
                     valid_rows.append(row)
             
             if len(fps) == 0:
-                st.error("No valid SMILES structures were found in the uploaded file!")
+                st.error("No valid SMILES structures were found in the uploaded file! Please check your column names.")
             else:
                 # Create a DataFrame for valid processed rows
                 result_df = pd.DataFrame(valid_rows)
