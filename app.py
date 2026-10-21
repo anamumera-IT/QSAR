@@ -58,9 +58,9 @@ if uploaded_file is not None:
             
             # Generate Fingerprints and 2D Structures for each molecule
             for index, row in df.iterrows():
-                # Dynamically find a column named 'smiles' or fallback to the first column
+                # DYNAMICAL FIX: Extracting the first matching column name string from the list
                 smiles_col = [col for col in df.columns if 'smile' in col.lower()]
-                smiles = row[smiles_col] if smiles_col else row.iloc[0]
+                smiles = row[smiles_col[0]] if smiles_col else row.iloc[0]
                 
                 mol = Chem.MolFromSmiles(str(smiles))
                 if mol:
