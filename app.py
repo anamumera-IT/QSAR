@@ -1,56 +1,75 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import pickle
+from rdkit import Chem
+from rdkit.Chem import AllChem
+import xgboost as xgb
 import os
 
-# App Title & Description
-st.set_page_config(page_title="QSAR Predictor", page_icon="🧪", layout="centered")
-st.title("🧪 QSAR Model Prediction App")
-st.write("Welcome! This app uses a Machine Learning model to predict Molecular Activity based on QSAR analysis.")
+# App Configuration
+st.set_page_config(page_title="QSAR Prediction App", page_icon="🧪", layout="wide")
+st.title("🧪 QSAR Model Prediction App (File Upload Mode)")
+st.write("Welcome! This application allows you to upload a SMILES file to predict Molecular Activity using QSAR analysis.")
 
-# Sidebar info
-st.sidebar.header("About")
-st.sidebar.write("This app deploys the QSAR model from GitHub onto Streamlit.")
+# 1. File Uploader Component
+uploaded_file = st.file_uploader("Choose a SMILES (.smi) or CSV file containing molecules", type=["smi", "csv"])
 
-# Section 1: Load Model
-@st.cache_resource
-def load_qsar_model():
-    # Agar aapki repo me trained model file (e.g., qsar_model.pkl) mojood hai
-    if os.path.exists("qsar_model.pkl"):
-        with open("qsar_model.pkl", "rb") as f:
-            return pickle.load(f)
-    return None
-
-model = load_qsar_model()
-
-# Section 2: User Input
-st.subheader("📝 Input Molecular Features")
-st.write("Enter the chemical/molecular features below to get a prediction:")
-
-# Example features (Aap apne dataset ke mutabiq in columns ko change kar sakte hain)
-feature_1 = st.number_input("Molecular Weight (MW)", min_value=0.0, max_value=1000.0, value=250.0, step=0.1)
-feature_2 = st.number_input("LogP (Octanol-Water Partition Coefficient)", min_value=-10.0, max_value=10.0, value=2.5, step=0.1)
-feature_3 = st.number_input("Number of Hydrogen Bond Donors", min_value=0, max_value=20, value=2)
-feature_4 = st.number_input("Number of Hydrogen Bond Acceptors", min_value=0, max_value=20, value=5)
-
-# Predict Button
-if st.button("🔮 Predict Activity"):
-    # Input data frame matching model columns
-    input_data = pd.DataFrame([[feature_1, feature_2, feature_3, feature_4]], 
-                               columns=['MW', 'LogP', 'H-Donors', 'H-Acceptors'])
-    
-    st.write("### Input Summary:")
-    st.dataframe(input_data)
-    
-    if model is not None:
-        try:
-            prediction = model.predict(input_data)
-            st.success(f"🎉 **Predicted Value / Class:** {prediction[0]}")
-        except Exception as e:
-            st.error(f"Prediction Error: {e}")
+if uploaded_file is not None:
+    # Handle different file formats
+    if uploaded_file.name.endswith(".smi"):
+        df = pd.read_csv(uploaded_file, sep="\t", names=["SMILES", "Name"], header=None)
     else:
-        # Mock prediction if no saved .pkl file exists yet
-        st.warning("⚠️ No trained `qsar_model.pkl` found. Displaying a dummy prediction for demonstration:")
-        dummy_prediction = np.random.uniform(0.1, 9.9)
-        st.info(f"✨ **Simulated Prediction:** {dummy_prediction:.3f}")
+        df = pd.read_csv(uploaded_file)
+        
+    st.write("### 📋 Uploaded Data Preview:", df.head())
+    
+    model_path = "mera_model.pkl"
+    
+    # 2. Prediction Trigger Button
+    if st.button("🚀 Predict Activity for All Molecules"):
+        with st.spinner("Processing molecules and generating molecular fingerprints..."):
+            
+            fps = []
+            valid_rows = []
+            
+            # Generate Morgan Fingerprints for each molecule
+            for index, row in df.iterrows():
+                smiles = row.iloc[0] # Assuming the first column contains SMILES strings
+                mol = Chem.MolFromSmiles(str(smiles))
+                if mol:
+                    fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+                    fps.append(list(fp))
+                    valid_rows.append(row)
+            
+            if len(fps) == 0:
+                st.error("No valid SMILES structures were found in the uploaded file!")
+            else:
+                # Create a DataFrame for valid processed rows
+                result_df = pd.DataFrame(valid_rows)
+                
+                # Check for trained model file availability
+                if os.path.exists(model_path):
+                    try:
+                        model = xgb.XGBRegressor()
+                        model.load_model(model_path)
+                        preds = model.predict(fps)
+                        result_df["Predicted_Activity"] = preds
+                        st.success(f"Successfully generated predictions for {len(fps)} molecules!")
+                    except Exception as e:
+                        st.warning("Error loading the model. Displaying baseline baseline values.")
+                        result_df["Predicted_Activity"] = [5.5] * len(fps)
+                else:
+                    # Fallback notice if the model binary is missing from the repo
+                    st.info("💡 Note: 'mera_model.pkl' not found in the repository. Displaying default demo predictions.")
+                    result_df["Predicted_Activity"] = [5.2] * len(fps)
+                
+                # Display results on screen
+                st.write("### 📊 Prediction Results:", result_df)
+                
+                # 3. CSV Data Download Action
+                csv = result_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Predictions CSV",
+                    data=csv,
+                    file_name="qsar_predictions_output.csv",
+                    mime="text/csv"
+                )
